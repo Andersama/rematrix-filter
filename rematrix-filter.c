@@ -71,30 +71,37 @@ static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 
 static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
-	
+
+	//initialize once, optimize for fast use
+	static volatile long long route[MAX_AUDIO_CHANNELS];
+
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
 	uint8_t *rematrixed_data[MAX_AUDIO_CHANNELS];
 	uint8_t **adata = (uint8_t**)audio->data;
 	size_t ch_buffer = (audio->frames * sizeof(float));
 
+	//prevent race condition
+	for (size_t c = 0; c < channels; c++)
+		route[c] = rematrix->route[c];
+
+	//create the new buffer
 	for (size_t c = 0; c < channels; c++) {
-		//routed to itself..don't do anything
-		if (rematrix->route[c] == c)
-			rematrixed_data[c] = adata[rematrix->route[c]];
-		//not routed to itself, duplicate the data
-		else if (rematrix->route[c] < channels && rematrix->route[c] >= 0)
-			rematrixed_data[c] = (uint8_t*)bmemdup(adata[rematrix->route[c]],
+		if (route[c] < channels && route[c] >= 0)
+			rematrixed_data[c] = (uint8_t*)bmemdup(adata[route[c]],
 				ch_buffer);
 		//not a valid route, mute
-		else
-			rematrixed_data[c] = (uint8_t*)calloc(1, ch_buffer);
+		else {
+			rematrixed_data[c] = (uint8_t*)bmalloc(ch_buffer); //(uint8_t*)calloc(1, ch_buffer);
+			memset(rematrixed_data[c], 0, ch_buffer);
+		}
 	}
 	
+	//memcpy data back into place
 	for (size_t c = 0; c < channels; c++) {
 		memcpy(adata[c],rematrixed_data[c],ch_buffer);
-		//be sure not to free memory that wasn't copied (routed to itself)
-		if (rematrixed_data[c] && rematrixed_data[c] != adata[c]) {
+		//free temporary buffer
+		if (rematrixed_data[c]) {
 			//don't memory leak
 			bfree(rematrixed_data[c]);
 		}
