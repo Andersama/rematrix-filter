@@ -70,23 +70,23 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
 	uint8_t *rematrixed_data[MAX_AUDIO_CHANNELS];
-	//uint8_t ignore_free[MAX_AUDIO_CHANNELS];
-	//memset(&ignore_free, 0, sizeof(uint8_t) * MAX_AUDIO_CHANNELS);
+	uint8_t **adata = (uint8_t**)audio->data;
 	size_t ch_buffer = (audio->frames * sizeof(float));
 
 	for (size_t c = 0; c < channels; c++) {
 		if (rematrix->route[c] < channels && rematrix->route[c] >= 0) {
-			blog(LOG_INFO, "copying ch %llu to ch %llu", rematrix->route[c], c);
-			rematrixed_data[c] = (uint8_t*)bmemdup(audio->data[rematrix->route[c]],ch_buffer);
+			rematrixed_data[c] = (uint8_t*)bmemdup(adata[rematrix->route[c]],ch_buffer);
 		}
 		else {
-			blog(LOG_INFO, "muting ch %llu", rematrix->route[c], c);
 			rematrixed_data[c] = (uint8_t*)calloc(1, ch_buffer);
 		}
 	}
 	
 	for (size_t c = 0; c < channels; c++) {
-		memcpy(audio->data[c],rematrixed_data[c],ch_buffer);
+		memcpy(adata[c],rematrixed_data[c],ch_buffer);
+		if (rematrixed_data[c]) {
+			bfree(rematrixed_data[c]);
+		}
 	}
 
 	return audio;
@@ -131,14 +131,16 @@ static obs_properties_t *rematrix_properties(void *data)
 
 	obs_properties_t *props = obs_properties_create();
 	obs_property_t *route[MAX_AUDIO_CHANNELS];
-		
+	
+	size_t channels = audio_output_get_channels(obs_get_audio());
+
 	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
 	const char* route_name_format = "route %i";
 	char* route_name = (char *)calloc(strlen(route_name_format) + pad_digits, sizeof(char));
 
 	const char* route_obs_format = "ch.%i";
 	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits, sizeof(char));//new char[strlen(route_obs_format) + pad_digits];
-	for (size_t i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+	for (size_t i = 0; i < channels; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(route_obs, route_obs_format, i);
 		route[i] = obs_properties_add_list(props, route_name, MT_(route_obs),
