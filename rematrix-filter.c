@@ -134,14 +134,14 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	obs_data_t *settings) {
 	
 	obs_property_list_clear(list);
-	obs_property_list_add_int(list, "mute", -1);
+	obs_property_list_add_int(list, MT_("mute"), -1);
 	long long channels = get_obs_output_channels();
 
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
 
 	//template out the format for the json
-	const char* route_obs_format = "ch.%i";
+	const char* route_obs_format = "in.ch.%i";
 	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits, 
 		sizeof(char));
 
@@ -176,7 +176,7 @@ static obs_properties_t *rematrix_properties(void *data)
 		sizeof(char));
 
 	//template out the format for the json
-	const char* route_obs_format = "ch.%i";
+	const char* route_obs_format = "out.ch.%i";
 	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits,
 		sizeof(char));
 
