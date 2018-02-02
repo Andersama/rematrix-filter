@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("win-asio", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("rematrix-filter", "en-US")
 
 #define MT_ obs_module_text
 
