@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE("win-asio", "en-US")
+OBS_MODULE_USE_DEFAULT_LOCALE("rematrix-filter", "en-US")
 
 #define MT_ obs_module_text
 
@@ -96,10 +96,10 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			memset(rematrixed_data[c], 0, ch_buffer);
 		}
 	}
-	
+
 	//memcpy data back into place
 	for (size_t c = 0; c < channels; c++) {
-		memcpy(adata[c],rematrixed_data[c],ch_buffer);
+		memcpy(adata[c], rematrixed_data[c], ch_buffer);
 		//free temporary buffer
 		if (rematrixed_data[c]) {
 			//don't memory leak
@@ -132,7 +132,7 @@ static void rematrix_defaults(obs_data_t *settings)
 
 static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	obs_data_t *settings) {
-	
+
 	obs_property_list_clear(list);
 	obs_property_list_add_int(list, MT_("mute"), -1);
 	long long channels = get_obs_output_channels();
@@ -142,12 +142,12 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 
 	//template out the format for the json
 	const char* route_obs_format = "in.ch.%i";
-	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits, 
+	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits,
 		sizeof(char));
 
 	for (long long c = 0; c < channels; c++) {
 		sprintf(route_obs, route_obs_format, c);
-		obs_property_list_add_int(list, route_obs , c);
+		obs_property_list_add_int(list, MT_(route_obs), c);
 	}
 
 	//don't memory leak
@@ -164,7 +164,7 @@ static obs_properties_t *rematrix_properties(void *data)
 
 	//make a list long enough for the maximum # of chs
 	obs_property_t *route[MAX_AUDIO_CHANNELS];
-	
+
 	size_t channels = audio_output_get_channels(obs_get_audio());
 
 	//make enough space for c strings
