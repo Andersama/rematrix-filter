@@ -7,6 +7,14 @@ OBS_MODULE_USE_DEFAULT_LOCALE("rematrix-filter", "en-US")
 
 #define MT_ obs_module_text
 
+#ifndef MAX_AUDIO_SIZE
+#ifndef AUDIO_OUTPUT_FRAMES
+#define	AUDIO_OUTPUT_FRAMES 1024
+#endif
+#define	MAX_AUDIO_SIZE (AUDIO_OUTPUT_FRAMES * sizeof(float))
+#endif // !MAX_AUDIO_SIZE
+
+/*****************************************************************************/
 long long get_obs_output_channels() {
 	// get channel number from output speaker layout set by obs
 	struct obs_audio_info aoi;
@@ -15,23 +23,35 @@ long long get_obs_output_channels() {
 	return recorded_channels;
 }
 
+/*****************************************************************************/
 struct rematrix_data {
 	obs_source_t *context;
 	size_t channels;
 	//store the routing information
 	long route[MAX_AUDIO_CHANNELS];
+	//store a temporary buffer
+	uint8_t *tmpbuffer[MAX_AUDIO_CHANNELS];
 };
 
+/*****************************************************************************/
 static const char *rematrix_name(void *unused) {
 	UNUSED_PARAMETER(unused);
 	return MT_("Rematrix");
 }
 
+/*****************************************************************************/
 static void rematrix_destroy(void *data) {
 	struct rematrix_data *rematrix = data;
+
+	for (size_t i = 0; i < rematrix->channels; i++) {
+		if (rematrix->tmpbuffer[i])
+			bfree(rematrix->tmpbuffer[i]);
+	}
+
 	bfree(rematrix);
 }
 
+/*****************************************************************************/
 static void rematrix_update(void *data, obs_data_t *settings) {
 	struct rematrix_data *rematrix = data;
 
@@ -45,8 +65,8 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 
 	//template out the route format
 	const char* route_name_format = "route %i";
-	char* route_name = (char *)calloc(strlen(route_name_format) + pad_digits,
-		sizeof(char));
+	size_t route_len = strlen(route_name_format) + pad_digits;
+	char* route_name = (char *)calloc(route_len, sizeof(char));
 
 	//copy the routing over from the settings
 	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
@@ -62,13 +82,20 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	free(route_name);
 }
 
+/*****************************************************************************/
 static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 	struct rematrix_data *rematrix = bzalloc(sizeof(*rematrix));
 	rematrix->context = filter;
 	rematrix_update(rematrix, settings);
+
+	for (size_t i = 0; i < rematrix->channels; i++) {
+		rematrix->tmpbuffer[i] = bzalloc(MAX_AUDIO_SIZE);
+	}
+
 	return rematrix;
 }
 
+/*****************************************************************************/
 static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
 
@@ -77,7 +104,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
-	uint8_t *rematrixed_data[MAX_AUDIO_CHANNELS];
+	uint8_t **rematrixed_data = (uint8_t**)rematrix->tmpbuffer;
 	uint8_t **adata = (uint8_t**)audio->data;
 	size_t ch_buffer = (audio->frames * sizeof(float));
 
@@ -85,31 +112,41 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	for (size_t c = 0; c < channels; c++)
 		route[c] = rematrix->route[c];
 
-	//create the new buffer
-	for (size_t c = 0; c < channels; c++) {
-		if (route[c] < channels && route[c] >= 0)
-			rematrixed_data[c] = (uint8_t*)bmemdup(adata[route[c]],
-				ch_buffer);
-		//not a valid route, mute
-		else {
-			rematrixed_data[c] = (uint8_t*)bmalloc(ch_buffer); //(uint8_t*)calloc(1, ch_buffer);
-			memset(rematrixed_data[c], 0, ch_buffer);
-		}
-	}
-	
-	//memcpy data back into place
-	for (size_t c = 0; c < channels; c++) {
-		memcpy(adata[c],rematrixed_data[c],ch_buffer);
-		//free temporary buffer
-		if (rematrixed_data[c]) {
-			//don't memory leak
-			bfree(rematrixed_data[c]);
-		}
-	}
+	uint32_t frames = audio->frames;
+	size_t copy_size = 0;
+	size_t copy_index = 0;
+	//consume AUDIO_OUTPUT_FRAMES or less # of frames
+	for (size_t chunk = 0; chunk < frames; chunk+=AUDIO_OUTPUT_FRAMES) {
+		//calculate the byte address we're copying to / from relative to the original data
+		copy_index = chunk * sizeof(float);
 
+		//calculate the size of the data we're about to try to copy
+		if (frames - chunk < AUDIO_OUTPUT_FRAMES)
+			copy_size = frames - chunk;
+		else
+			copy_size = AUDIO_OUTPUT_FRAMES;
+		copy_size *= sizeof(float);
+
+		//copy data to temporary buffer
+		for (size_t c = 0; c < channels; c++) {
+			//valid route copy data to temporary buffer
+			if (route[c] >= 0 && route[c] < channels)
+				memcpy(rematrixed_data[c], &adata[route[c]][copy_index], copy_size);
+			//not a valid route, mute (we can mute the whole temporary buffer)
+			else
+				memset(rematrixed_data[c], 0, MAX_AUDIO_SIZE);
+		}
+
+		//memcpy data back into place
+		for (size_t c = 0; c < channels; c++) {
+			memcpy(&adata[c][copy_index], rematrixed_data[c], copy_size);
+		}
+		//move to next chunk of unprocessed data
+	}
 	return audio;
 }
 
+/*****************************************************************************/
 static void rematrix_defaults(obs_data_t *settings)
 {
 	//make enough space for c strings
@@ -117,8 +154,8 @@ static void rematrix_defaults(obs_data_t *settings)
 
 	//template out the route format
 	const char* route_name_format = "route %i";
-	char* route_name = (char *)calloc(strlen(route_name_format) + pad_digits,
-		sizeof(char));
+	size_t route_len = strlen(route_name_format) + pad_digits;
+	char* route_name = (char *)calloc(route_len, sizeof(char));
 
 	//default is no routing (ordered) -1 or any out of bounds is mute*
 	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
@@ -130,6 +167,7 @@ static void rematrix_defaults(obs_data_t *settings)
 	free(route_name);
 }
 
+/*****************************************************************************/
 static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	obs_data_t *settings) {
 	
@@ -142,8 +180,8 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 
 	//template out the format for the json
 	const char* route_obs_format = "in.ch.%i";
-	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits, 
-		sizeof(char));
+	size_t route_obs_len = strlen(route_obs_format) + pad_digits;
+	char* route_obs = (char *)calloc(route_obs_len, sizeof(char));
 
 	for (long long c = 0; c < channels; c++) {
 		sprintf(route_obs, route_obs_format, c);
@@ -156,6 +194,7 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	return true;
 }
 
+/*****************************************************************************/
 static obs_properties_t *rematrix_properties(void *data)
 {
 	UNUSED_PARAMETER(data);
@@ -172,22 +211,26 @@ static obs_properties_t *rematrix_properties(void *data)
 
 	//template out the route format
 	const char* route_name_format = "route %i";
-	char* route_name = (char *)calloc(strlen(route_name_format) + pad_digits,
-		sizeof(char));
+	size_t route_len = strlen(route_name_format) + pad_digits;
+	char* route_name = (char *)calloc(route_len, sizeof(char));
 
 	//template out the format for the json
 	const char* route_obs_format = "out.ch.%i";
-	char* route_obs = (char *)calloc(strlen(route_obs_format) + pad_digits,
-		sizeof(char));
+	size_t route_obs_len = strlen(route_obs_format) + pad_digits;
+	char* route_obs = (char *)calloc(route_obs_len, sizeof(char));
 
 	//add an appropriate # of options to mix from
 	for (size_t i = 0; i < channels; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(route_obs, route_obs_format, i);
-		route[i] = obs_properties_add_list(props, route_name, MT_(route_obs),
-			OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-		obs_property_set_long_description(route[i], MT_("rematrix route"));
-		obs_property_set_modified_callback(route[i], fill_out_channels);
+		route[i] = obs_properties_add_list(props, route_name,
+		    MT_(route_obs), OBS_COMBO_TYPE_LIST,OBS_COMBO_FORMAT_INT);
+
+		obs_property_set_long_description(route[i],
+		    MT_("tooltip"));
+
+		obs_property_set_modified_callback(route[i],
+		    fill_out_channels);
 	}
 
 	//don't memory leak
@@ -197,6 +240,7 @@ static obs_properties_t *rematrix_properties(void *data)
 	return props;
 }
 
+/*****************************************************************************/
 bool obs_module_load(void)
 {
 	struct obs_source_info rematrixer_filter = {
