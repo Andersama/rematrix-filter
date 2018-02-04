@@ -117,7 +117,8 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	size_t copy_index = 0;
 	//consume AUDIO_OUTPUT_FRAMES or less # of frames
 	for (size_t chunk = 0; chunk < frames; chunk+=AUDIO_OUTPUT_FRAMES) {
-		//calculate the byte address we're copying to / from relative to the original data
+		//calculate the byte address we're copying to / from 
+		//relative to the original data
 		copy_index = chunk * sizeof(float);
 
 		//calculate the size of the data we're about to try to copy
@@ -131,15 +132,18 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		for (size_t c = 0; c < channels; c++) {
 			//valid route copy data to temporary buffer
 			if (route[c] >= 0 && route[c] < channels)
-				memcpy(rematrixed_data[c], &adata[route[c]][copy_index], copy_size);
-			//not a valid route, mute (we can mute the whole temporary buffer)
+				memcpy(rematrixed_data[c], 
+					&adata[route[c]][copy_index],
+					copy_size);
+			//not a valid route, mute
 			else
 				memset(rematrixed_data[c], 0, MAX_AUDIO_SIZE);
 		}
 
 		//memcpy data back into place
 		for (size_t c = 0; c < channels; c++) {
-			memcpy(&adata[c][copy_index], rematrixed_data[c], copy_size);
+			memcpy(&adata[c][copy_index], rematrixed_data[c],
+				copy_size);
 		}
 		//move to next chunk of unprocessed data
 	}
