@@ -46,6 +46,8 @@ struct rematrix_data {
 	//store a temporary buffer
 	uint8_t *tmpbuffer[MAX_AUDIO_CHANNELS];
 
+	obs_data_t* settings;
+
 	DARRAY(obs_hotkey_id) profile_hotkeys;
 	DARRAY(char*) profile_names;
 };
@@ -281,7 +283,31 @@ void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 	obs_data_t *settings = obs_data_create_from_json_file_safe(
 		cb_data->file_path, "bak");
 
-	rematrix_update(cb_data->data, settings);
+	struct rematrix_data *rematrix = (struct rematrix_data *)cb_data->data;
+
+	bool route_changed = false;
+	long route[MAX_AUDIO_CHANNELS];
+
+	//make enough space for c strings
+	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+
+	//template out the route format
+	const char* route_name_format = "route %i";
+	size_t route_len = strlen(route_name_format) + pad_digits;
+	char* route_name = (char *)calloc(route_len, sizeof(char));
+
+	//default is no routing (ordered) -1 or any out of bounds is mute*
+	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+		sprintf(route_name, route_name_format, i);
+		route[i] = obs_data_get_int(settings, route_name);
+		obs_data_set_int(rematrix->settings, route_name, route[i]);
+	}
+
+	const char* profile_name = obs_data_get_string(settings,
+		"profile_name");
+	obs_data_set_string(rematrix->settings, "profile_name", profile_name);
+
+	rematrix_update(cb_data->data, rematrix->settings);
 	bfree(settings);
 }
 
