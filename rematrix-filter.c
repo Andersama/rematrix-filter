@@ -83,6 +83,17 @@ long long get_obs_output_channels() {
 	return recorded_channels;
 }
 
+char* get_scene_data_path() {
+	const char* scene = obs_frontend_get_current_scene_collection();
+	const char* config_path = os_get_config_path_ptr("obs-studio\\basic\\profiles");
+	long len = strlen(scene) + strlen("\\") + strlen(config_path) + 1;
+
+	char *scene_data_path = malloc(len);
+	sprintf(scene_data_path, "%s\\%s", config_path, scene);
+
+	return scene_data_path;
+}
+
 /*****************************************************************************/
 static const char *rematrix_name(void *unused) {
 	UNUSED_PARAMETER(unused);
@@ -317,6 +328,7 @@ void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 		cb_data->file_path, "bak");
 
 	rematrix_update(cb_data->data, settings);
+	bfree(settings);
 }
 
 static bool attach_hotkey(const char* profile_name, void* data) {
@@ -336,20 +348,20 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 
 	size_t profile_len = strlen(profile_name);
 
-	obs_module_t *cur_module = obs_current_module();
-	const char* module_data_path = obs_get_module_data_path(cur_module);
-	const char* current_scene_collection = obs_frontend_get_current_scene_collection();
-	//const char* program_data_path = os_get_program_data_path_ptr("");
-	const char* config_path = os_get_config_path_ptr("obs-studio");
+	//obs_module_t *cur_module = obs_current_module();
+	//const char* module_data_path = obs_get_module_data_path(cur_module);
+	//const char* current_scene_collection = obs_frontend_get_current_scene_collection();
+	//const char* config_path = os_get_config_path_ptr("obs-studio");
+	const char* scene_data_path = get_scene_data_path();
 
-	size_t path_len = strlen(module_data_path);
+	size_t path_len = strlen(scene_data_path);
 
-	size_t target_len = path_len + profile_len + strlen("/.json") + 1;
+	size_t target_len = path_len + profile_len + strlen("\\.json") + 1;
 
 	//template out filepath
-	const char* path_format = "%s/%s.json";
+	const char* path_format = "%s\\%s.json";
 	char* file_path = malloc(target_len);
-	sprintf(file_path, path_format, module_data_path, profile_name);
+	sprintf(file_path, path_format, scene_data_path, profile_name);
 
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
@@ -375,6 +387,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 		struct hotkey_cb *cb_data = malloc(sizeof(struct hotkey_cb));
 		cb_data->data = data;
 		cb_data->file_path = strdup(file_path);
+		rematrix->context;
 		/*
 		obs_hotkey_id hotkey_id = obs_hotkey_register_source(rematrix->context,
 			profile_name, desc_str, rematrix_on_hotkey, cb_data);
