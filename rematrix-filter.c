@@ -66,8 +66,6 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 static void rematrix_defaults(obs_data_t *settings);
 static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	obs_data_t *settings);
-static bool save_profile(obs_properties_t *props, obs_property_t *profiles,
-	obs_data_t *settings);
 void rematrix_on_hotkey(struct hotkey_cb* cb_data);
 static bool attach_hotkey(const char* profile_name, void* data);
 static bool add_hotkey(obs_properties_t *props, obs_property_t *property,
@@ -279,50 +277,6 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 }
 
 /*****************************************************************************/
-static bool save_profile(obs_properties_t *props, obs_property_t *profiles,
-	obs_data_t *settings) {
-
-	obs_data_array_t *profile_array;
-	size_t count;
-
-	profile_array = obs_data_get_array(settings, "matrix_name");
-	count = obs_data_array_count(profile_array);
-
-	for (size_t i = 0; i < count; i++) {
-		obs_data_t *item = obs_data_array_item(profile_array, i);
-		const char* profile_name = obs_data_get_string(item, "value");
-	}
-
-	long route[MAX_AUDIO_CHANNELS];
-
-	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
-
-	//template out the route format
-	const char* route_name_format = "route %i";
-	size_t route_len = strlen(route_name_format) + pad_digits;
-	char* route_name = (char *)calloc(route_len, sizeof(char));
-
-	//template
-
-	//copy the routing over from the settings
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
-		sprintf(route_name, route_name_format, i);
-		route[i] = (int)obs_data_get_int(settings, route_name);
-		/*
-		if (rematrix->route[i] != route[i]) {
-			rematrix->route[i] = route[i];
-			route_changed = true;
-		}
-		*/
-	}
-
-	free(route_name);
-
-	return true;
-}
-
-/*****************************************************************************/
 void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 	obs_data_t *settings = obs_data_create_from_json_file_safe(
 		cb_data->file_path, "bak");
@@ -348,12 +302,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 
 	size_t profile_len = strlen(profile_name);
 
-	//obs_module_t *cur_module = obs_current_module();
-	//const char* module_data_path = obs_get_module_data_path(cur_module);
-	//const char* current_scene_collection = obs_frontend_get_current_scene_collection();
-	//const char* config_path = os_get_config_path_ptr("obs-studio");
 	const char* scene_data_path = get_scene_data_path();
-
 	size_t path_len = strlen(scene_data_path);
 
 	size_t target_len = path_len + profile_len + strlen("\\.json") + 1;
@@ -398,8 +347,9 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 			hotkey_created = false;
 		} else {
 			//push the hotkey id into dynamic array
+			char* dprofile_name = strdup(profile_name);
 			da_push_back(rematrix->profile_hotkeys, &hotkey_id);
-			da_push_back(rematrix->profile_names, &profile_name);
+			da_push_back(rematrix->profile_names, &dprofile_name);
 			hotkey_created = true;
 		}
 
@@ -467,11 +417,7 @@ static obs_properties_t *rematrix_properties(void *data)
 	
 	obs_property_clicked_t t;
 	add_hotkey_button = obs_properties_add_button(props, "add_hotkey", MT_("Add Hotkey"), add_hotkey);
-	//edit_hotkey_button = obs_properties_add_button(props, "edit_hotkey", MT_("Edit Hotkey"), edit_hotkey);
-	//OBS_EDITABLE_LIST_TYPE_STRINGS
-	//obs_property_t * profiles = obs_properties_add_editable_list(props, "matrix_name", MT_("Profiles"), OBS_EDITABLE_LIST_TYPE_STRINGS,"","");
-	//obs_property_set_modified_callback(profiles, save_profile);
-	//obs_property_button_clicked()
+
 	//add an appropriate # of options to mix from
 	for (size_t i = 0; i < channels; i++) {
 		sprintf(route_name, route_name_format, i);
@@ -485,9 +431,6 @@ static obs_properties_t *rematrix_properties(void *data)
 		obs_property_set_modified_callback(route[i],
 		    fill_out_channels);
 	}
-
-	//obs_properties_add_button(props, MT_("Add Hotkey"), MT_("Add Hotkey"), cb);
-	//obs_properties_add_button2(props, "add_hotkey", MT_("Add Hotkey"), cb, priv);
 
 	//don't memory leak
 	free(route_name);
