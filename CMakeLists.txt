@@ -1,4 +1,12 @@
+cmake_minimum_required(VERSION 3.5)
+
 project(rematrix-filter)
+
+########################################
+# find libobs                                                          #
+########################################
+include(external/FindLibObs.cmake)
+find_package(LibObs REQUIRED)
 
 include_directories(
 	/
@@ -16,4 +24,4 @@ target_link_libraries(rematrix-filter
 	libobs
 )
 
-install_obs_plugin_with_data(rematrix-filter data)
+install_external_plugin_with_data(rematrix-filter data)

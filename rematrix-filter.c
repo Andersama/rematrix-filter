@@ -189,7 +189,7 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 
 	for (long long c = 0; c < channels; c++) {
 		sprintf(route_obs, route_obs_format, c);
-		obs_property_list_add_int(list, route_obs , c);
+		obs_property_list_add_int(list, MT_(route_obs) , c);
 	}
 
 	//don't memory leak
