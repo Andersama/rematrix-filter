@@ -91,7 +91,8 @@ long long get_obs_output_channels() {
 char* get_scene_data_path() {
 	const char* scene = obs_frontend_get_current_scene_collection();
 	const char* config_path = 
-		os_get_config_path_ptr("obs-studio\\basic\\profiles");
+		os_get_config_path_ptr("obs-studio\\basic");//\\scenes
+
 	long len = strlen(scene) + strlen("\\") + strlen(config_path) + 1;
 
 	char *scene_data_path = malloc(len);
@@ -134,6 +135,14 @@ static void rematrix_clear_hotkeys(obs_properties_t *props,
 	obs_property_t *property, void* data) {
 	struct rematrix_data *rematrix = (struct rematrix_data *)data;
 
+	//free the profile name array
+	for (size_t i = 0; i < rematrix->profile_names.num; i++) {
+		if (rematrix->profile_names.array[i])
+			free(rematrix->profile_names.array[i]);
+	}
+
+	da_free(rematrix->profile_names);
+
 	//unregister hotkeys
 	for (size_t i = 0; i < rematrix->profile_hotkeys.num; i++) {
 		obs_hotkey_unregister(rematrix->profile_hotkeys.array[i]);
@@ -145,6 +154,72 @@ static void rematrix_clear_hotkeys(obs_properties_t *props,
 	obs_data_array_t *empty = obs_data_array_create();
 	obs_data_set_array(rematrix->settings, "profile_names", empty);
 	obs_data_array_release(empty);
+}
+
+/*****************************************************************************/
+static void rematrix_update_hotkeys(void* data) {
+	struct rematrix_data *rematrix = (struct rematrix_data *)data;
+
+	obs_data_array_t *profile_names = obs_data_get_array(rematrix->settings,
+		"profile_names");
+	size_t profile_count = obs_data_array_count(profile_names);
+
+	static DARRAY(char *) new_darray_profiles;
+
+	for (size_t i = 0; i < profile_count; i++) {
+		obs_data_t *profile_item =
+			obs_data_array_item(profile_names, i);
+		const char *profile_name = obs_data_get_string(profile_item,
+			"value");
+		char* dprofile_name = strdup(profile_name);
+
+		da_push_back(new_darray_profiles, &dprofile_name);
+		
+		obs_data_release(profile_item);
+	}
+
+	//remove hotkeys
+	bool found = false;
+	for (size_t i = 0; i < rematrix->profile_names.num; i++) {
+		found = false;
+		for (size_t j = 0; j < new_darray_profiles.num; j++) {
+			if (strcmp(rematrix->profile_names.array[i], new_darray_profiles.array[j]) == 0) {
+				found = true;
+				//shorten up the search, names are unique (plus we want the remaining)
+				da_swap(new_darray_profiles, j, new_darray_profiles.num-1);
+				da_pop_back(new_darray_profiles);
+				break;
+			}
+		}
+		if (!found) {
+			//swap the location w/ the back
+			da_swap(rematrix->profile_names, i, rematrix->profile_names.num - 1);
+			//pop / erase the back index
+			da_pop_back(rematrix->profile_names);
+			//do the same to the hotkeys array, but also unregister the hotkey
+			obs_hotkey_unregister(rematrix->profile_hotkeys.array[i]);
+			da_swap(rematrix->profile_hotkeys, i, rematrix->profile_hotkeys.num - 1);
+			da_pop_back(rematrix->profile_hotkeys);
+
+			//recheck this index since we've swapped the back to this location
+			i--; //counter-acts the i++
+		}
+	}
+
+	//register any new hotkeys (from the remaining list) don't memory leak
+	for (size_t j = 0; j < new_darray_profiles.num; j++) {
+		//load_hotkey(new_darray_profiles.array[j], data);
+		attach_hotkey(new_darray_profiles.array[j], data);
+	}
+
+	//free the new profile name darray
+	for (size_t i = 0; i < new_darray_profiles.num; i++) {
+		if (new_darray_profiles.array[i])
+			free(new_darray_profiles.array[i]);
+	}
+
+	da_free(new_darray_profiles);
+
 }
 
 /*****************************************************************************/
@@ -175,6 +250,9 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 		}
 	}
 
+	//unregister keys
+	rematrix_update_hotkeys(data);
+
 	//don't memory leak
 	free(route_name);
 }
@@ -201,7 +279,7 @@ static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 		obs_data_t *profile_item = 
 			obs_data_array_item(profile_names, i);
 		const char *profile_name = obs_data_get_string(profile_item,
-			"name");
+			"value");//"name");
 		if (!load_hotkey(profile_name, rematrix)) {
 			//obs_data_array_erase(profile_names, i);
 		}
@@ -318,6 +396,13 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 }
 
 /*****************************************************************************/
+static bool profile_names_modified(obs_properties_t *props, obs_property_t *list,
+	obs_data_t *settings) {
+
+	return false;
+}
+
+/*****************************************************************************/
 void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 	if (!cb_data->file_path || !os_file_exists(cb_data->file_path))
 		return;
@@ -376,10 +461,10 @@ static bool load_hotkey(const char* profile_name, void* data) {
 	const char* scene_data_path = get_scene_data_path();
 	size_t path_len = strlen(scene_data_path);
 
-	size_t target_len = path_len + profile_len + strlen("\\.json") + 1;
+	size_t target_len = path_len + profile_len + strlen("-.json") + 1;
 
 	//template out filepath
-	const char* path_format = "%s\\%s.json";
+	const char* path_format = "%s-%s.json";
 	char* file_path = malloc(target_len);
 	sprintf(file_path, path_format, scene_data_path, profile_name);
 
@@ -443,10 +528,10 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 	const char* scene_data_path = get_scene_data_path();
 	size_t path_len = strlen(scene_data_path);
 
-	size_t target_len = path_len + profile_len + strlen("\\.json") + 1;
+	size_t target_len = path_len + profile_len + strlen("-.json") + 1;
 
 	//template out filepath
-	const char* path_format = "%s\\%s.json";
+	const char* path_format = "%s-%s.json";
 	char* file_path = malloc(target_len);
 	sprintf(file_path, path_format, scene_data_path, profile_name);
 
@@ -502,9 +587,9 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 			for (size_t i = 0; i < profile_count; i++) {
 				obs_data_t *profile_item = obs_data_array_item(
 					profile_names, i);
-				const char *data_profile_name = 
+				const char *data_profile_name =
 					obs_data_get_string(profile_item,
-						"name");
+						"value");//"name");
 				if (strcmp(profile_name,
 					data_profile_name) == 0) {
 				//obs_data_array_erase(profile_names, i);
@@ -517,7 +602,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 
 			if (!found) {
 				obs_data_t* profile_object = obs_data_create();
-				obs_data_set_string(profile_object, "name",
+				obs_data_set_string(profile_object, "value",
 					dprofile_name);
 				obs_data_array_push_back(profile_names,
 					profile_object);
@@ -543,6 +628,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 static bool add_hotkey(obs_properties_t *props, obs_property_t *property,
 	void* data) {
 	struct rematrix_data *rematrix = data;
+
 	int rc = attach_hotkey(rematrix->profile_name, data);
 
 	return true;
@@ -569,9 +655,10 @@ static obs_properties_t *rematrix_properties(void *data)
 
 	//make a list long enough for the maximum # of chs
 	obs_property_t *route[MAX_AUDIO_CHANNELS];
-	obs_property_t *add_hotkey_button;
+	//obs_property_t *add_hotkey_button;
 	obs_property_t *clear_hotkeys_button;
 	obs_property_t *profile_name_text;
+	obs_property_t *profile_names_list;
 
 	size_t channels = audio_output_get_channels(obs_get_audio());
 
@@ -591,9 +678,10 @@ static obs_properties_t *rematrix_properties(void *data)
 	profile_name_text = obs_properties_add_text(props, "profile_name",
 		MT_("Profile Name"), OBS_TEXT_DEFAULT);
 	obs_property_set_modified_callback(profile_name_text, profile_changed);
-
+	/*
 	add_hotkey_button = obs_properties_add_button(props, "add_hotkey",
 		MT_("Add Hotkey"), add_hotkey);
+	*/
 
 	//add an appropriate # of options to mix from
 	for (size_t i = 0; i < channels; i++) {
@@ -609,6 +697,12 @@ static obs_properties_t *rematrix_properties(void *data)
 		obs_property_set_modified_callback(route[i],
 			fill_out_channels);
 	}
+
+	profile_names_list = obs_properties_add_editable_list(props, "profile_names",
+		MT_("Filter Profiles"), OBS_EDITABLE_LIST_TYPE_STRINGS,
+		"", "");
+
+	obs_property_set_modified_callback(profile_names_list, profile_names_modified);
 
 	clear_hotkeys_button = obs_properties_add_button(props,
 		"clear_hotkeys", MT_("Clear Hotkeys"), rematrix_clear_hotkeys);
