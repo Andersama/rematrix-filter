@@ -9,7 +9,7 @@ install:
   - cd C:\projects
   - git clone --recursive https://github.com/Andersama/obs-studio.git
   - cd C:\projects\obs-studio
-  - git fetch -all
+  - git fetch --all
   - git branch
   - git checkout -b rematrix-filter-install
   - git branch
