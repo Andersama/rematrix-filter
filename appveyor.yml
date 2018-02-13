@@ -4,6 +4,7 @@ environment:
 install:
   - cd C:\projects
   - git clone --recursive https://github.com/Andersama/obs-studio.git
+  - cd C:\projects\obs-studio
   - git checkout -b rematrix-filter-install
   - if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
   - if exist vlc.zip (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -z vlc.zip) else (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -C -)
