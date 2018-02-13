@@ -1,6 +1,8 @@
 environment:
   CURL_VERSION: 7.56.1
 
+skip_non_tags: true
+  
 install:
   - cd C:\projects
   - git clone --recursive https://github.com/Andersama/obs-studio.git
@@ -32,10 +34,11 @@ build_script:
   - call msbuild /m /p:Configuration=%build_config% C:\projects\obs-studio\build64\obs-studio.sln /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 
 before_deploy:
-  - C:\projects\obs-studio\CI\before-deploy-win.cmd
+  - C:\projects\obs-studio\CI\before-deploy-win-rematrix-filter.cmd
 
 deploy_script:
-  - ps: Push-AppveyorArtifact "build.zip" -FileName "$(git describe).zip"
+  - ps: cd C:\projects\rematrix-filter\
+  - ps: Push-AppveyorArtifact "C:\projects\rematrix-filter\build.zip" -FileName "$(git describe).zip"
 
 test: off
 
