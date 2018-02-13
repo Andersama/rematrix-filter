@@ -4,12 +4,17 @@ environment:
 skip_non_tags: true
   
 install:
+  - git branch
   - git log --pretty=oneline --max-count=3
   - cd C:\projects
   - git clone --recursive https://github.com/Andersama/obs-studio.git
   - cd C:\projects\obs-studio
+  - git fetch -all
+  - git branch
   - git checkout -b rematrix-filter-install
-  - git log --pretty=oneline --max-count=3
+  - git branch
+  - git reset --hard origin/rematrix-filter-install
+  - git log master..rematrix-filter-install --pretty=oneline --max-count=3
   - if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
   - if exist vlc.zip (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -z vlc.zip) else (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -C -)
   - 7z x dependencies2015.zip -odependencies2015
