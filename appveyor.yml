@@ -22,6 +22,10 @@ install:
   - dir
   - cd C:\projects\obs-studio\plugins\rematrix-filter\
   - dir
+  - git log master --pretty=oneline --max-count=3
+  - git checkout -b master
+  - git pull
+  - dir
   - cd C:\projects\obs-studio
   - git log master..rematrix-filter-install --pretty=oneline --max-count=3
   - if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
