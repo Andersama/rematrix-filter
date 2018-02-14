@@ -24,7 +24,6 @@ install:
   - dir
   - git log master --pretty=oneline --max-count=3
   - git checkout -B master
-  - git pull
   - git log master --pretty=oneline --max-count=3
   - dir
   - cd C:\projects\obs-studio
