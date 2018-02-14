@@ -60,7 +60,7 @@ before_deploy:
 
 deploy_script:
   - ps: cd C:\projects\rematrix-filter\
-  - ps: Push-AppveyorArtifact "C:\projects\rematrix-filter\obs-studio.zip" -FileName "$(git describe)-hotkey-recall.zip"
+  - ps: Push-AppveyorArtifact "C:\projects\rematrix-filter\obs-studio.zip" -FileName "$(git rev-parse --abbrev-ref HEAD).zip"
 
 test: off
 
