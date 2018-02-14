@@ -24,6 +24,9 @@ install:
   - dir
   - git log master --pretty=oneline --max-count=3
   - git submodule update --remote --merge
+  - git reset --hard
+  - git clean -nd
+  - git clean -fd
   - git log master --pretty=oneline --max-count=3
   - dir
   - cd C:\projects\obs-studio
