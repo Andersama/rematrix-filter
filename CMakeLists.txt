@@ -32,5 +32,5 @@ target_link_libraries(rematrix-filter
 #	"${OBS_FRONTEND_LIB}"
 )
 
-install_plugin_with_data(rematrix-filter data)
+install_obs_plugin_with_data(rematrix-filter data)
 #install_external_plugin_with_data(rematrix-filter data)
