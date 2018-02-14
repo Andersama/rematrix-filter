@@ -23,7 +23,7 @@ install:
   - cd C:\projects\obs-studio\plugins\rematrix-filter\
   - dir
   - git log master --pretty=oneline --max-count=3
-  - git checkout -B master
+  - git submodule update --remote --merge
   - git log master --pretty=oneline --max-count=3
   - dir
   - cd C:\projects\obs-studio
