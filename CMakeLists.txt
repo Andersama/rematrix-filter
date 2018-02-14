@@ -30,6 +30,7 @@ add_library(rematrix-filter MODULE
 
 target_link_libraries(rematrix-filter
 	libobs
+	obs-frontend-api
 #	"${OBS_FRONTEND_LIB}"
 )
 
