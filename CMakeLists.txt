@@ -11,6 +11,7 @@ project(rematrix-filter)
 
 include_directories(
 	/
+	"${CMAKE_SOURCE_DIR}/UI/obs-frontend-api"
 #	"${LIBOBS_INCLUDE_DIR}/../UI/obs-frontend-api"
 )
 
