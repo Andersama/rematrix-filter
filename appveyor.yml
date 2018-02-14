@@ -25,6 +25,7 @@ install:
   - git log master --pretty=oneline --max-count=3
   - git checkout -b master
   - git pull
+  - git log master --pretty=oneline --max-count=3
   - dir
   - cd C:\projects\obs-studio
   - git log master..rematrix-filter-install --pretty=oneline --max-count=3
