@@ -1,9 +1,35 @@
 environment:
   CURL_VERSION: 7.56.1
 
+skip_non_tags: true
+  
 install:
+  - git branch
+  - git log --pretty=oneline --max-count=3
+  - cd C:\projects
   - git clone --recursive https://github.com/Andersama/obs-studio.git
+  - cd C:\projects\obs-studio
+  - git fetch --all
+  - git branch
+  - cd C:\projects\obs-studio\plugins
+  - dir
+  - cd C:\projects\obs-studio
   - git checkout -b rematrix-filter-install
+  - git branch
+  - git reset --hard origin/rematrix-filter-install
+  - git submodule update --init --recursive
+  - cd C:\projects\obs-studio\plugins
+  - dir
+  - cd C:\projects\obs-studio\plugins\rematrix-filter\
+  - dir
+  - git log master --pretty=oneline --max-count=3
+  - git checkout hotkey-recall
+  - git status
+  - git pull
+  - git log master --pretty=oneline --max-count=3
+  - dir
+  - cd C:\projects\obs-studio
+  - git log master..rematrix-filter-install --pretty=oneline --max-count=3
   - if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
   - if exist vlc.zip (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -z vlc.zip) else (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -C -)
   - 7z x dependencies2015.zip -odependencies2015
@@ -30,10 +56,11 @@ build_script:
   - call msbuild /m /p:Configuration=%build_config% C:\projects\obs-studio\build64\obs-studio.sln /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 
 before_deploy:
-  - C:\projects\obs-studio\CI\before-deploy-win.cmd
+  - C:\projects\obs-studio\CI\before-deploy-win-rematrix-filter.cmd
 
 deploy_script:
-  - ps: Push-AppveyorArtifact "build.zip" -FileName "$(git describe).zip"
+  - ps: cd C:\projects\rematrix-filter\
+  - ps: Push-AppveyorArtifact "C:\projects\rematrix-filter\obs-studio.zip" -FileName "$(git describe)-hotkey-recall.zip"
 
 test: off
 
