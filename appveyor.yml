@@ -18,6 +18,9 @@ install:
   - git branch
   - git reset --hard origin/rematrix-filter-install
   - git submodule update --init --recursive
+  - cd C:\projects\obs-studio\plugins
+  - dir
+  - cd C:\projects\obs-studio\plugins\rematrix-filter\
   - dir
   - cd C:\projects\obs-studio
   - git log master..rematrix-filter-install --pretty=oneline --max-count=3
