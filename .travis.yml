@@ -1,0 +1,19 @@
+language: cpp
+
+matrix:
+  include:
+    - os: osx
+      env:
+       - CMAKE_PREFIX_PATH=/usr/local/opt/qt5/lib/cmake
+       - CEF_BUILD_VERSION=3.3282.1726.gc8368c8
+      before_install: "./CI/install-dependencies-osx.sh"
+      before_script: "./CI/before-script-osx.sh"
+      before_deploy: "./CI/before-deploy-osx.sh"
+
+    - os: linux
+      dist: trusty
+      sudo: required
+      before_install: "./CI/install-dependencies-linux.sh"
+      before_script: "./CI/before-script-linux.sh"
+
+script: cd ./build && make -j4 && cd -
