@@ -250,7 +250,7 @@ static void rematrix_defaults(obs_data_t *settings)
 			sprintf(mix_name, mix_name_format, i, j);
 			//default mix is a ch to itself
 			if (i == j) {
-				obs_data_set_default_double(settings, mix_name, 1.0);
+				obs_data_set_default_double(settings, mix_name, 1.0 * SCALE);
 			}
 			else {
 				obs_data_set_default_double(settings, mix_name, 0.0);
