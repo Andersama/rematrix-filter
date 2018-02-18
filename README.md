@@ -1,4 +1,4 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/mdvuol8kuitkrk9f/branch/master?svg=true)](https://ci.appveyor.com/project/Andersama/rematrix-filter/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/mdvuol8kuitkrk9f/branch/full-mix?svg=true)](https://ci.appveyor.com/project/Andersama/rematrix-filter/branch/full-mix)
 # rematrix-filter
 
 ## Audio Rematrix Plugin for OBS-Studio ##
