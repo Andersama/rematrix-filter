@@ -185,9 +185,11 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	size_t copy_size = 0;
 	size_t unprocessed_samples = 0;
 	//consume AUDIO_OUTPUT_FRAMES or less # of frames
+	/*
 	__m256 s256;
 	__m256 m256;
 	__m256 t256;
+	*/
 	__m128 s128;
 	__m128 m128;
 	__m128 t128;
@@ -207,12 +209,15 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			for (; c2 < 1; c2++) {
 				if (mix[c][c2]) {
 					size_t s = 0;
-					size_t end = unprocessed_samples - 8;
+					size_t end;
+					/*
+					end = unprocessed_samples - 8;
 					for(; s < end; s+=8) {
 						s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
 						m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
 						_mm256_store_ps(&fmatrixed_data[c][s], _mm256_mul_ps(s256, m256));
 					}
+					*/
 					end = unprocessed_samples - 4;
 					for(; s < end; s+=4) {
 						s128 = _mm_load_ps(&fdata[c2][chunk + s]);
@@ -230,13 +235,17 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			//add contributions
 			for (; c2 < channels; c2++) {
 				if (mix[c][c2]) {
-					size_t end = unprocessed_samples - 8;
+					size_t s = 0;
+					size_t end;
+					/*
+					end = unprocessed_samples - 8;
 					for(; s < end; s+=8) {
 						s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
 						t256 = _mm256_load_ps(&fmatrixed_data[c][s]);
 						m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
 						_mm256_store_ps(&fmatrixed_data[c][s], _mm256_add_ps(t256, _mm256_mul_ps(s256, m256)));
 					}
+					*/
 					end = unprocessed_samples - 4;
 					for(; s < end; s+=4) {
 						s128 = _mm_load_ps(&fdata[c2][chunk + s]);
@@ -244,7 +253,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 						m128 = _mm_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
 						_mm_store_ps(&fmatrixed_data[c][s], _mm_add_ps(t128, _mm_mul_ps(s128, m128)));
 					}
-					for (size_t s = 0; s < unprocessed_samples; s++) {
+					for (; s < unprocessed_samples; s++) {
 						fmatrixed_data[c][s] += fdata[c2][chunk + s] * mix[c][c2];
 					}
 				}
@@ -253,12 +262,15 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		//move data into place and process gain
 		for (size_t c = 0; c < channels; c++) {
 			size_t s = 0;
-			size_t end = unprocessed_samples - 8;
+			size_t end;
+			/*
+			end = unprocessed_samples - 8;
 			for(; s < end; s+=8){
 				s256 = _mm256_load_ps(&(fmatrixed_data[c][s]));
 				m256 = _mm256_set1_ps(true_gain[c]);
 				_mm256_store_ps(&fdata[c][chunk + s], _mm256_mul_ps(s256, m256));
 			}
+			*/
 			end = unprocessed_samples - 4;
 			for(; s < end; s+=4){
 				s128 = _mm_load_ps(&(fmatrixed_data[c][s]));
