@@ -204,7 +204,10 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 						fmatrixed_data[c][s] = fdata[c2][chunk + s] * mix[c][c2];
 					}
 				} else {
-					memset(fmatrixed_data[c], 0, copy_size);
+					//memset(fmatrixed_data[c], 0, copy_size);
+					for (size_t s = 0; s < unprocessed_samples; s++) {
+						fmatrixed_data[c][s] = 0.0;
+					}
 				}
 			}
 			//memset(fmatrixed_data[c], 0, copy_size);
