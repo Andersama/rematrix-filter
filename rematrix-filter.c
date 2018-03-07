@@ -33,11 +33,11 @@ struct rematrix_data {
 	obs_source_t *context;
 	size_t channels;
 	//store the routing information
-	float mix[MAX_AUDIO_CHANNELS][MAX_AUDIO_CHANNELS];
+	float mix[MAX_AV_PLANES][MAX_AV_PLANES];
 
-	double gain[MAX_AUDIO_CHANNELS];
+	double gain[MAX_AV_PLANES];
 	//store a temporary buffer
-	uint8_t *tmpbuffer[MAX_AUDIO_CHANNELS];
+	uint8_t *tmpbuffer[MAX_AV_PLANES];
 	//ensure we can treat it as a dynamic array
 	size_t size;
 };
@@ -70,11 +70,11 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	bool gain_changed = false;
 	bool mix_changed = false;
 
-	double gain[MAX_AUDIO_CHANNELS];
-	float mix[MAX_AUDIO_CHANNELS][MAX_AUDIO_CHANNELS];
+	double gain[MAX_AV_PLANES];
+	float mix[MAX_AV_PLANES][MAX_AV_PLANES];
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
@@ -92,8 +92,8 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	char* mix_name = (char *)calloc(mix_len, sizeof(char));
 
 	//copy the routing over from the settings
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
-		for (long long j = 0; j < MAX_AUDIO_CHANNELS; j++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
+		for (long long j = 0; j < MAX_AV_PLANES; j++) {
 			sprintf(mix_name, mix_name_format, i, j);
 			mix[i][j] = (float)obs_data_get_double(settings, mix_name) / SCALE;
 			
@@ -149,11 +149,11 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
 
 	//initialize once, optimize for fast use
-	static volatile long long ch_count[MAX_AUDIO_CHANNELS];
-	static volatile double gain[MAX_AUDIO_CHANNELS];
-	static volatile float mix[MAX_AUDIO_CHANNELS][MAX_AUDIO_CHANNELS];
-	static volatile double true_gain[MAX_AUDIO_CHANNELS];
-	static volatile uint32_t options[MAX_AUDIO_CHANNELS];
+	static volatile long long ch_count[MAX_AV_PLANES];
+	static volatile double gain[MAX_AV_PLANES];
+	static volatile float mix[MAX_AV_PLANES][MAX_AV_PLANES];
+	static volatile double true_gain[MAX_AV_PLANES];
+	static volatile uint32_t options[MAX_AV_PLANES];
 
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
@@ -292,7 +292,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 static void rematrix_defaults(obs_data_t *settings)
 {
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the gain format
 	const char* gain_name_format = "gain %i";
@@ -305,8 +305,8 @@ static void rematrix_defaults(obs_data_t *settings)
 	char* mix_name = (char *)calloc(gain_len, sizeof(char));
 
 	//default is no routing (ordered) -1 or any out of bounds is mute*
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
-		for (long long j = 0; j < MAX_AUDIO_CHANNELS; j++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
+		for (long long j = 0; j < MAX_AV_PLANES; j++) {
 			sprintf(mix_name, mix_name_format, i, j);
 			//default mix is a ch to itself
 			if (i == j) {
@@ -337,7 +337,7 @@ static bool update_visible(obs_properties_t *props, obs_property_t *prop,
 	size_t j = 0;
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out
 	const char* route_obs_format = "out.ch.%i";
@@ -398,16 +398,16 @@ static obs_properties_t *rematrix_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 
 	//make a list long enough for the maximum # of chs
-	obs_property_t *route[MAX_AUDIO_CHANNELS];
+	obs_property_t *route[MAX_AV_PLANES];
 	//pseduo-pan w/ gain (thanks Matt)
-	obs_property_t *gain[MAX_AUDIO_CHANNELS];
+	obs_property_t *gain[MAX_AV_PLANES];
 
 	obs_property_t *view_route;
 
 	size_t channels = audio_output_get_channels(obs_get_audio());
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
