@@ -152,7 +152,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		//copy data to temporary buffer
 		for (size_t c = 0; c < channels; c++) {
 			//valid route copy data to temporary buffer
-			if (route[c] >= 0 && route[c] < channels)
+			if (fdata[c] && route[c] >= 0 && route[c] < channels)
 				memcpy(fmatrixed_data[c],
 					&fdata[route[c]][chunk],
 					copy_size);
@@ -163,6 +163,8 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 
 		//move data into place and process gain
 		for(size_t c = 0; c < channels; c++){
+			if(!fdata[c])
+				continue;
 			for (size_t s = 0; s < unprocessed_samples; s++) {
 				fdata[c][chunk + s] = fmatrixed_data[c][s] * gain[c];
 			}
