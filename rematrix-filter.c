@@ -207,7 +207,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			//reset to 0
 			size_t c2 = 0;
 			for (; c2 < 1; c2++) {
-				if (mix[c][c2]) {
+				if (fdata[c] && mix[c][c2]) {
 					size_t s = 0;
 					size_t end;
 					/*
@@ -234,7 +234,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			//memset(fmatrixed_data[c], 0, copy_size);
 			//add contributions
 			for (; c2 < channels; c2++) {
-				if (mix[c][c2]) {
+				if (fdata[c] && mix[c][c2]) {
 					size_t s = 0;
 					size_t end;
 					/*
@@ -261,6 +261,8 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		}
 		//move data into place and process gain
 		for (size_t c = 0; c < channels; c++) {
+			if(!fdata[c])
+				continue;
 			size_t s = 0;
 			size_t end;
 			/*
