@@ -47,10 +47,10 @@ struct rematrix_data {
 	obs_source_t *context;
 	size_t channels;
 	//store the routing information
-	long route[MAX_AUDIO_CHANNELS];
-	double gain[MAX_AUDIO_CHANNELS];
+	long route[MAX_AV_PLANES];
+	double gain[MAX_AV_PLANES];
 	//store a temporary buffer
-	uint8_t *tmpbuffer[MAX_AUDIO_CHANNELS];
+	uint8_t *tmpbuffer[MAX_AV_PLANES];
 
 	obs_data_t* settings;
 
@@ -235,11 +235,11 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 
 	bool route_changed = false;
 	bool gain_changed = false;
-	long route[MAX_AUDIO_CHANNELS];
-	double gain[MAX_AUDIO_CHANNELS];
+	long route[MAX_AV_PLANES];
+	double gain[MAX_AV_PLANES];
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
@@ -252,7 +252,7 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
 	//copy the routing over from the settings
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(gain_name, gain_name_format, i);
 
@@ -317,8 +317,8 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
 
 	//initialize once, optimize for fast use
-	static volatile long long route[MAX_AUDIO_CHANNELS];
-	static volatile double gain[MAX_AUDIO_CHANNELS];
+	static volatile long long route[MAX_AV_PLANES];
+	static volatile double gain[MAX_AV_PLANES];
 
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
@@ -371,7 +371,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 static void rematrix_defaults(obs_data_t *settings)
 {
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
@@ -384,7 +384,7 @@ static void rematrix_defaults(obs_data_t *settings)
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
 	//default is no routing (ordered) -1 or any out of bounds is mute*
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(gain_name, gain_name_format, i);
 
@@ -408,7 +408,7 @@ static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
 	long long channels = get_obs_output_channels();
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the format for the json
 	const char* route_obs_format = "in.ch.%i";
@@ -444,11 +444,11 @@ void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 	struct rematrix_data *rematrix = (struct rematrix_data *)cb_data->data;
 
 	bool route_changed = false;
-	long route[MAX_AUDIO_CHANNELS];
-	long gain[MAX_AUDIO_CHANNELS];
+	long route[MAX_AV_PLANES];
+	long gain[MAX_AV_PLANES];
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
@@ -461,7 +461,7 @@ void rematrix_on_hotkey(struct hotkey_cb* cb_data) {
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
 	//default is no routing (ordered) -1 or any out of bounds is mute*
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(gain_name, gain_name_format, i);
 		//make sure defaults exist for this temp default object
@@ -579,7 +579,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 	sprintf(file_path, path_format, scene_data_path, profile_name);
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
@@ -591,7 +591,7 @@ static bool attach_hotkey(const char* profile_name, void* data) {
 	size_t gain_len = strlen(gain_name_format) + pad_digits;
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
-	for (long long i = 0; i < MAX_AUDIO_CHANNELS; i++) {
+	for (long long i = 0; i < MAX_AV_PLANES; i++) {
 		sprintf(route_name, route_name_format, i);
 		sprintf(gain_name, gain_name_format, i);
 
@@ -706,9 +706,9 @@ static obs_properties_t *rematrix_properties(void *data)
 	obs_properties_t *props = obs_properties_create();
 
 	//make a list long enough for the maximum # of chs
-	obs_property_t *route[MAX_AUDIO_CHANNELS];
+	obs_property_t *route[MAX_AV_PLANES];
 	//pseduo-pan w/ gain (thanks Matt)
-	obs_property_t *gain[MAX_AUDIO_CHANNELS];
+	obs_property_t *gain[MAX_AV_PLANES];
 	//obs_property_t *add_hotkey_button;
 	obs_property_t *clear_hotkeys_button;
 	obs_property_t *profile_name_text;
@@ -717,7 +717,7 @@ static obs_properties_t *rematrix_properties(void *data)
 	size_t channels = audio_output_get_channels(obs_get_audio());
 
 	//make enough space for c strings
-	int pad_digits = (int)floor(log10(abs(MAX_AUDIO_CHANNELS))) + 1;
+	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
 	//template out the route format
 	const char* route_name_format = "route %i";
