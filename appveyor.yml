@@ -4,56 +4,16 @@ environment:
 skip_non_tags: true
   
 install:
-  - git branch
-  - git log --pretty=oneline --max-count=3
-  - cd C:\projects
-  - git clone --recursive https://github.com/Andersama/obs-studio.git
-  - cd C:\projects\obs-studio
-  - git fetch --all
-  - git branch
-  - cd C:\projects\obs-studio\plugins
-  - dir
-  - cd C:\projects\obs-studio
-  - git checkout -b rematrix-filter-install
-  - git branch
-  - git reset --hard origin/rematrix-filter-install
   - git submodule update --init --recursive
-  - cd C:\projects\obs-studio\plugins
-  - dir
-  - cd C:\projects\obs-studio\plugins\rematrix-filter\
-  - dir
-  - git log master --pretty=oneline --max-count=3
-  - git checkout full-mix-sse
-  - git status
-  - git pull
-  - git log master --pretty=oneline --max-count=3
-  - dir
-  - cd C:\projects\obs-studio
-  - git log master..rematrix-filter-install --pretty=oneline --max-count=3
-  - if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
-  - if exist vlc.zip (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -z vlc.zip) else (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -C -)
-  - 7z x dependencies2015.zip -odependencies2015
-  - 7z x vlc.zip -ovlc
-  - set DepsPath32=%CD%\dependencies2015\win32
-  - set DepsPath64=%CD%\dependencies2015\win64
-  - set VLCPath=%CD%\vlc
-  - set QTDIR32=C:\Qt\5.7\msvc2015
-  - set QTDIR64=C:\Qt\5.7\msvc2015_64
-  - set build_config=RelWithDebInfo
-  - move "C:\Program Files (x86)\Windows Kits\10\Include\10.0.14393.0\um\d3d11on12*" "C:\Program Files (x86)\Windows Kits\8.1\Include\um"
-  - move "C:\Program Files (x86)\Windows Kits\10\Include\10.0.14393.0\um\d3d12*" "C:\Program Files (x86)\Windows Kits\8.1\Include\um"
-  - move "C:\Program Files (x86)\Windows Kits\10\Include\10.0.14393.0\shared\dxgi*" "C:\Program Files (x86)\Windows Kits\8.1\Include\shared"
-  - mkdir build
-  - mkdir build32
-  - mkdir build64
-  - cd ./build32
-  - cmake -G "Visual Studio 14 2015" -DCOPIED_DEPENDENCIES=false -DCOPY_DEPENDENCIES=true -DBUILD_CAPTIONS=true -DCOMPILE_D3D12_HOOK=true ..
-  - cd ../build64
-  - cmake -G "Visual Studio 14 2015 Win64" -DCOPIED_DEPENDENCIES=false -DCOPY_DEPENDENCIES=true -DBUILD_CAPTIONS=true -DCOMPILE_D3D12_HOOK=true ..
+  - set build_config=Release
+  - call C:\projects\rematrix-filter\CI\install-build-obs-rematrix-filter.cmd
 
 build_script:
   - call msbuild /m /p:Configuration=%build_config% C:\projects\obs-studio\build32\obs-studio.sln /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
   - call msbuild /m /p:Configuration=%build_config% C:\projects\obs-studio\build64\obs-studio.sln /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
+  - cd C:\projects\obs-studio\
+  - git describe --tags --abbrev=0 > C:\projects\obs-studio-last-tag-built.txt
+  - set /p OBSLastTagBuilt=<C:\projects\obs-studio-last-tag-built.txt
 
 before_deploy:
   - C:\projects\obs-studio\CI\before-deploy-win-rematrix-filter.cmd
@@ -67,3 +27,5 @@ test: off
 cache:
   - dependencies2015.zip
   - vlc.zip
+  - C:\projects\obs-studio-last-tag-built.txt
+  - C:\projects\obs-studio
