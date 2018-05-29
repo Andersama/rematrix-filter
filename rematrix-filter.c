@@ -40,6 +40,13 @@ struct rematrix_data {
 	uint8_t *tmpbuffer[MAX_AV_PLANES];
 	//ensure we can treat it as a dynamic array
 	size_t size;
+
+	//initialize once, optimize for fast use
+	volatile long long _ch_count[MAX_AV_PLANES];
+	volatile double _gain[MAX_AV_PLANES];
+	volatile float _mix[MAX_AV_PLANES][MAX_AV_PLANES];
+	volatile double _true_gain[MAX_AV_PLANES];
+	//static volatile uint32_t _options[MAX_AV_PLANES];
 };
 
 /*****************************************************************************/
@@ -96,7 +103,7 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 		for (long long j = 0; j < MAX_AV_PLANES; j++) {
 			sprintf(mix_name, mix_name_format, i, j);
 			mix[i][j] = (float)obs_data_get_double(settings, mix_name) / SCALE;
-			
+
 			if (rematrix->mix[i][j] != mix[i][j]) {
 				rematrix->mix[i][j] = mix[i][j];
 				mix_changed = true;
@@ -148,13 +155,6 @@ static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
 
-	//initialize once, optimize for fast use
-	static volatile long long ch_count[MAX_AV_PLANES];
-	static volatile double gain[MAX_AV_PLANES];
-	static volatile float mix[MAX_AV_PLANES][MAX_AV_PLANES];
-	static volatile double true_gain[MAX_AV_PLANES];
-	static volatile uint32_t options[MAX_AV_PLANES];
-
 	struct rematrix_data *rematrix = data;
 	const size_t channels = rematrix->channels;
 	float **fmatrixed_data = (float**)rematrix->tmpbuffer;
@@ -163,21 +163,21 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 
 	//prevent race condition
 	for (size_t c = 0; c < channels; c++) {
-		ch_count[c] = 0;
-		gain[c] = rematrix->gain[c];
+		rematrix->_ch_count[c] = 0;
+		rematrix->_gain[c] = rematrix->gain[c];
 		for (size_t c2 = 0; c2 < channels; c2++) {
-			mix[c][c2] = rematrix->mix[c][c2];
+			rematrix->_mix[c][c2] = rematrix->mix[c][c2];
 			//use ch_count to "count" how many chs are in use
 			//for normalization
-			if (mix[c][c2] > 0)
-				ch_count[c]++;
+			if (rematrix->_mix[c][c2] > 0)
+				rematrix->_ch_count[c]++;
 		}
 		//when ch_count == 0.0 float returns +inf, making this division by 0.0 actually safe
-		if (ch_count[c] == 0.0) {
-			true_gain[c] = 0.0;
+		if (rematrix->_ch_count[c] == 0.0) {
+			rematrix->_true_gain[c] = 0.0;
 		}
 		else {
-			true_gain[c] = gain[c] / ch_count[c];
+			rematrix->_true_gain[c] = rematrix->_gain[c] / rematrix->_ch_count[c];
 		}
 	}
 
@@ -207,80 +207,81 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			//reset to 0
 			size_t c2 = 0;
 			for (; c2 < 1; c2++) {
-				if (fdata[c] && mix[c][c2]) {
+				if (fdata[c] && rematrix->_mix[c][c2]) {
 					size_t s = 0;
 					size_t end;
 					/*
 					end = unprocessed_samples - 8;
 					for(; s < end; s+=8) {
-						s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
-						m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
-						_mm256_store_ps(&fmatrixed_data[c][s], _mm256_mul_ps(s256, m256));
+					s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
+					m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
+					_mm256_store_ps(&fmatrixed_data[c][s], _mm256_mul_ps(s256, m256));
 					}
 					*/
 					end = unprocessed_samples - 4;
-					for(; s < end; s+=4) {
+					for (; s < end; s += 4) {
 						s128 = _mm_load_ps(&fdata[c2][chunk + s]);
-						m128 = _mm_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
+						m128 = _mm_set1_ps(rematrix->_mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
 						_mm_store_ps(&fmatrixed_data[c][s], _mm_mul_ps(s128, m128));
 					}
 					for (; s < unprocessed_samples; s++) {
-						fmatrixed_data[c][s] = fdata[c2][chunk + s] * mix[c][c2];
+						fmatrixed_data[c][s] = fdata[c2][chunk + s] * rematrix->_mix[c][c2];
 					}
-				} else {
+				}
+				else {
 					memset(fmatrixed_data[c], 0, copy_size);
 				}
 			}
 			//memset(fmatrixed_data[c], 0, copy_size);
 			//add contributions
 			for (; c2 < channels; c2++) {
-				if (fdata[c] && mix[c][c2]) {
+				if (fdata[c] && rematrix->_mix[c][c2]) {
 					size_t s = 0;
 					size_t end;
 					/*
 					end = unprocessed_samples - 8;
 					for(; s < end; s+=8) {
-						s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
-						t256 = _mm256_load_ps(&fmatrixed_data[c][s]);
-						m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
-						_mm256_store_ps(&fmatrixed_data[c][s], _mm256_add_ps(t256, _mm256_mul_ps(s256, m256)));
+					s256 = _mm256_load_ps(&fdata[c2][chunk + s]);
+					t256 = _mm256_load_ps(&fmatrixed_data[c][s]);
+					m256 = _mm256_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
+					_mm256_store_ps(&fmatrixed_data[c][s], _mm256_add_ps(t256, _mm256_mul_ps(s256, m256)));
 					}
 					*/
 					end = unprocessed_samples - 4;
-					for(; s < end; s+=4) {
+					for (; s < end; s += 4) {
 						s128 = _mm_load_ps(&fdata[c2][chunk + s]);
 						t128 = _mm_load_ps(&fmatrixed_data[c][s]);
-						m128 = _mm_set1_ps(mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
+						m128 = _mm_set1_ps(rematrix->_mix[c][c2]);//_mm256_load_ps(&mix[c][c2]);
 						_mm_store_ps(&fmatrixed_data[c][s], _mm_add_ps(t128, _mm_mul_ps(s128, m128)));
 					}
 					for (; s < unprocessed_samples; s++) {
-						fmatrixed_data[c][s] += fdata[c2][chunk + s] * mix[c][c2];
+						fmatrixed_data[c][s] += fdata[c2][chunk + s] * rematrix->_mix[c][c2];
 					}
 				}
 			}
 		}
 		//move data into place and process gain
 		for (size_t c = 0; c < channels; c++) {
-			if(!fdata[c])
+			if (!fdata[c])
 				continue;
 			size_t s = 0;
 			size_t end;
 			/*
 			end = unprocessed_samples - 8;
 			for(; s < end; s+=8){
-				s256 = _mm256_load_ps(&(fmatrixed_data[c][s]));
-				m256 = _mm256_set1_ps(true_gain[c]);
-				_mm256_store_ps(&fdata[c][chunk + s], _mm256_mul_ps(s256, m256));
+			s256 = _mm256_load_ps(&(fmatrixed_data[c][s]));
+			m256 = _mm256_set1_ps(true_gain[c]);
+			_mm256_store_ps(&fdata[c][chunk + s], _mm256_mul_ps(s256, m256));
 			}
 			*/
 			end = unprocessed_samples - 4;
-			for(; s < end; s+=4){
+			for (; s < end; s += 4) {
 				s128 = _mm_load_ps(&(fmatrixed_data[c][s]));
-				m128 = _mm_set1_ps(true_gain[c]);
+				m128 = _mm_set1_ps(rematrix->_true_gain[c]);
 				_mm_store_ps(&fdata[c][chunk + s], _mm_mul_ps(s128, m128));
 			}
 			for (; s < unprocessed_samples; s++) {
-				fdata[c][chunk + s] = fmatrixed_data[c][s] * true_gain[c];
+				fdata[c][chunk + s] = fmatrixed_data[c][s] * rematrix->_true_gain[c];
 			}
 		}
 		//move to next chunk of unprocessed data
@@ -370,11 +371,11 @@ static bool update_visible(obs_properties_t *props, obs_property_t *prop,
 
 	for (i = 0; i < channels; i++) {
 		sprintf(gain_name, gain_name_format, i);
-		
+
 		visible = i == selected_ch;
 
 		gain = obs_properties_get(props, gain_name);
-		obs_property_set_visible(gain,visible);
+		obs_property_set_visible(gain, visible);
 
 		for (j = 0; j < channels; j++) {
 			sprintf(mix_name, mix_name_format, i, j);
