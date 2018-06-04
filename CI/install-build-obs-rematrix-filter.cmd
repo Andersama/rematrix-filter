@@ -113,8 +113,12 @@ cd C:\projects\obs-studio\
 if exist dependencies2015.zip (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -z dependencies2015.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2015.zip -f --retry 5 -C -)
 REM if exist dependencies2017.zip (curl -kLO https://obsproject.com/downloads/dependencies2017.zip -f --retry 5 -z dependencies2017.zip) else (curl -kLO https://obsproject.com/downloads/dependencies2017.zip -f --retry 5 -C -)
 if exist vlc.zip (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -z vlc.zip) else (curl -kLO https://obsproject.com/downloads/vlc.zip -f --retry 5 -C -)
+
+if exist dependencies2015 rmdir /s /q C:\projects\obs-studio\dependencies2015
 7z x dependencies2015.zip -odependencies2015
 REM 7z x dependencies2017.zip -odependencies2017
+
+if exist vlc rmdir /s /q C:\projects\obs-studio\vlc
 7z x vlc.zip -ovlc
 
 echo Setting Up VLC
