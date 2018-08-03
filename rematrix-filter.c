@@ -1,4 +1,3 @@
-#pragma once
 #include <obs-module.h>
 #include <stdio.h>
 
@@ -17,6 +16,8 @@ OBS_MODULE_USE_DEFAULT_LOCALE("rematrix-filter", "en-US")
 #define	MAX_AUDIO_SIZE (AUDIO_OUTPUT_FRAMES * sizeof(float))
 #endif // !MAX_AUDIO_SIZE
 
+#define SCALE 100.0f
+
 /*****************************************************************************/
 long long get_obs_output_channels() {
 	// get channel number from output speaker layout set by obs
@@ -31,14 +32,21 @@ struct rematrix_data {
 	obs_source_t *context;
 	size_t channels;
 	//store the routing information
-	long route[MAX_AV_PLANES];
+	float mix[MAX_AV_PLANES][MAX_AV_PLANES];
+	bool polarity[MAX_AV_PLANES][MAX_AV_PLANES];
+
 	double gain[MAX_AV_PLANES];
 	//store a temporary buffer
 	uint8_t *tmpbuffer[MAX_AV_PLANES];
+	//ensure we can treat it as a dynamic array
+	size_t size;
 
 	//initialize once, optimize for fast use
-	volatile long long _route[MAX_AV_PLANES];
+	volatile long long _ch_count[MAX_AV_PLANES];
 	volatile double _gain[MAX_AV_PLANES];
+	volatile float _mix[MAX_AV_PLANES][MAX_AV_PLANES];
+	volatile double _true_gain[MAX_AV_PLANES];
+	//static volatile uint32_t options[MAX_AV_PLANES];
 };
 
 /*****************************************************************************/
@@ -67,8 +75,12 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 
 	bool route_changed = false;
 	bool gain_changed = false;
-	long route[MAX_AV_PLANES];
+	bool mix_changed = false;
+	bool polarity_changed = false;
+
 	double gain[MAX_AV_PLANES];
+	float mix[MAX_AV_PLANES][MAX_AV_PLANES];
+	bool polarity[MAX_AV_PLANES][MAX_AV_PLANES];
 
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
@@ -83,20 +95,41 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	size_t gain_len = strlen(gain_name_format) + pad_digits;
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
+	//template out mix format
+	const char* mix_name_format = "mix.%i.%i";
+	size_t mix_len = strlen(mix_name_format) + (pad_digits * 2);
+	char* mix_name = (char *)calloc(mix_len, sizeof(char));
+
+	//template out mix format
+	const char* polarity_name_format = "polarity.%i.%i";
+	size_t polarity_len = strlen(polarity_name_format) + (pad_digits * 2);
+	char* polarity_name = (char *)calloc(polarity_len, sizeof(char));
+
 	//copy the routing over from the settings
 	for (long long i = 0; i < MAX_AV_PLANES; i++) {
+		for (long long j = 0; j < MAX_AV_PLANES; j++) {
+			sprintf(mix_name, mix_name_format, i, j);
+			sprintf(polarity_name, polarity_name_format, i, j);
+			mix[i][j] = (float)obs_data_get_double(settings, mix_name) / SCALE;
+			polarity[i][j] = (bool)obs_data_get_bool(settings, polarity_name);
+
+			if (rematrix->mix[i][j] != mix[i][j]) {
+				rematrix->mix[i][j] = mix[i][j];
+				mix_changed = true;
+			}
+
+			if (rematrix->polarity[i][j] != polarity[i][j]) {
+				rematrix->polarity[i][j] = polarity[i][j];
+				polarity_changed = true;
+			}
+		}
 		sprintf(route_name, route_name_format, i);
 		sprintf(gain_name, gain_name_format, i);
 
-		route[i] = (int)obs_data_get_int(settings, route_name);
 		gain[i] = (float)obs_data_get_double(settings, gain_name);
 
 		gain[i] = db_to_mul(gain[i]);
 
-		if (rematrix->route[i] != route[i]) {
-			rematrix->route[i] = route[i];
-			route_changed = true;
-		}
 		if (rematrix->gain[i] != gain[i]) {
 			rematrix->gain[i] = gain[i];
 			gain_changed = true;
@@ -106,6 +139,8 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	//don't memory leak
 	free(route_name);
 	free(gain_name);
+	free(mix_name);
+	free(polarity_name);
 }
 
 /*****************************************************************************/
@@ -114,9 +149,19 @@ static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 	rematrix->context = filter;
 	rematrix_update(rematrix, settings);
 
+	size_t target_size = MAX_AUDIO_SIZE;
 	for (size_t i = 0; i < rematrix->channels; i++) {
-		rematrix->tmpbuffer[i] = bzalloc(MAX_AUDIO_SIZE);
+		rematrix->tmpbuffer[i] = (uint8_t*)bzalloc(target_size);
+		while (target_size >= 64 && !rematrix->tmpbuffer[i]) {
+			rematrix->tmpbuffer[i] = (uint8_t*)bzalloc(target_size);
+			blog(LOG_ERROR, "%s failed allocation for buffer %i, shrinking buffer size to %llu", __FUNCTION__, i, target_size);
+			target_size /= 2; //cut size in half
+		}
+		if (!rematrix->tmpbuffer[i]) {
+			blog(LOG_ERROR, "%s failed minimum allocation", __FUNCTION__, i);
+		}
 	}
+	rematrix->size = target_size;
 
 	return rematrix;
 }
@@ -133,40 +178,71 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 
 	//prevent race condition
 	for (size_t c = 0; c < channels; c++) {
-		rematrix->_route[c] = rematrix->route[c];
+		rematrix->_ch_count[c] = 0;
 		rematrix->_gain[c] = rematrix->gain[c];
+		for (size_t c2 = 0; c2 < channels; c2++) {
+			rematrix->_mix[c][c2] = rematrix->mix[c][c2];
+			if (rematrix->polarity[c][c2])
+				rematrix->_mix[c][c2] *= -1;
+			//use ch_count to "count" how many chs are in use
+			//for normalization
+			if (abs(rematrix->_mix[c][c2]) > 0.0)
+				rematrix->_ch_count[c]++;
+		}
+		//when ch_count == 0.0 float returns +inf, making this division by 0.0 actually safe
+		if (rematrix->_ch_count[c] == 0.0) {
+			rematrix->_true_gain[c] = 0.0;
+		} else {
+			rematrix->_true_gain[c] = rematrix->_gain[c] / rematrix->_ch_count[c];
+		}
 	}
 
 	uint32_t frames = audio->frames;
 	size_t copy_size = 0;
 	size_t unprocessed_samples = 0;
 	//consume AUDIO_OUTPUT_FRAMES or less # of frames
-	for (size_t chunk = 0; chunk < frames; chunk += AUDIO_OUTPUT_FRAMES) {
+	size_t size = rematrix->size / sizeof(float);
+	for (size_t chunk = 0; chunk < frames; chunk += size) {
 		//calculate the size of the data we're about to try to copy
-		if (frames - chunk < AUDIO_OUTPUT_FRAMES)
+		if (frames - chunk < size)
 			unprocessed_samples = frames - chunk;
 		else
-			unprocessed_samples = AUDIO_OUTPUT_FRAMES;
+			unprocessed_samples = size;
 		copy_size = unprocessed_samples * sizeof(float);
 
 		//copy data to temporary buffer
 		for (size_t c = 0; c < channels; c++) {
-			//valid route copy data to temporary buffer
-			if (fdata[c] && rematrix->_route[c] >= 0 && rematrix->_route[c] < channels)
-				memcpy(fmatrixed_data[c],
-					&fdata[rematrix->_route[c]][chunk],
-					copy_size);
-			//not a valid route, mute
-			else
-				memset(fmatrixed_data[c], 0, MAX_AUDIO_SIZE);
+			//reset to 0
+			size_t c2 = 0;
+			for (; c2 < 1; c2++) {
+				if (fdata[c2] && rematrix->_mix[c][c2]) {
+					for (size_t s = 0; s < unprocessed_samples; s++) {
+						fmatrixed_data[c][s] = fdata[c2][chunk + s] * rematrix->_mix[c][c2];
+					}
+				}
+				else {
+					//memset(fmatrixed_data[c], 0, copy_size);
+					for (size_t s = 0; s < unprocessed_samples; s++) {
+						fmatrixed_data[c][s] = 0.0;
+					}
+				}
+			}
+			//memset(fmatrixed_data[c], 0, copy_size);
+			//add contributions
+			for (; c2 < channels; c2++) {
+				if (fdata[c2] && rematrix->_mix[c][c2]) {
+					for (size_t s = 0; s < unprocessed_samples; s++) {
+						fmatrixed_data[c][s] += fdata[c2][chunk + s] * rematrix->_mix[c][c2];
+					}
+				}
+			}
 		}
-
 		//move data into place and process gain
 		for (size_t c = 0; c < channels; c++) {
 			if (!fdata[c])
 				continue;
 			for (size_t s = 0; s < unprocessed_samples; s++) {
-				fdata[c][chunk + s] = fmatrixed_data[c][s] * rematrix->_gain[c];
+				fdata[c][chunk + s] = fmatrixed_data[c][s] * rematrix->_true_gain[c];
 			}
 		}
 		//move to next chunk of unprocessed data
@@ -180,22 +256,37 @@ static void rematrix_defaults(obs_data_t *settings)
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
-	//template out the route format
-	const char* route_name_format = "route %i";
-	size_t route_len = strlen(route_name_format) + pad_digits;
-	char* route_name = (char *)calloc(route_len, sizeof(char));
-
 	//template out the gain format
 	const char* gain_name_format = "gain %i";
 	size_t gain_len = strlen(gain_name_format) + pad_digits;
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
+	//template out mix format
+	const char* mix_name_format = "mix.%i.%i";
+	size_t mix_len = strlen(gain_name_format) + (pad_digits * 2);
+	char* mix_name = (char *)calloc(gain_len, sizeof(char));
+
+	//template out mix format
+	const char* polarity_name_format = "polarity.%i.%i";
+	size_t polarity_len = strlen(polarity_name_format) + (pad_digits * 2);
+	char* polarity_name = (char *)calloc(polarity_len, sizeof(char));
+
 	//default is no routing (ordered) -1 or any out of bounds is mute*
 	for (long long i = 0; i < MAX_AV_PLANES; i++) {
-		sprintf(route_name, route_name_format, i);
+		for (long long j = 0; j < MAX_AV_PLANES; j++) {
+			sprintf(mix_name, mix_name_format, i, j);
+			sprintf(polarity_name, polarity_name_format, i, j);
+			//default mix is a ch to itself
+			if (i == j) {
+				obs_data_set_default_double(settings, mix_name, 1.0 * SCALE);
+			} else {
+				obs_data_set_default_double(settings, mix_name, 0.0);
+			}
+			obs_data_set_default_bool(settings, polarity_name, 0);
+		}
+
 		sprintf(gain_name, gain_name_format, i);
 
-		obs_data_set_default_int(settings, route_name, i);
 		obs_data_set_default_double(settings, gain_name, 0.0);
 	}
 
@@ -203,32 +294,82 @@ static void rematrix_defaults(obs_data_t *settings)
 
 	//don't memory leak
 	free(gain_name);
-	free(route_name);
+	free(mix_name);
+	free(polarity_name);
 }
 
-/*****************************************************************************/
-static bool fill_out_channels(obs_properties_t *props, obs_property_t *list,
+static bool update_visible(obs_properties_t *props, obs_property_t *prop,
 	obs_data_t *settings) {
-
-	obs_property_list_clear(list);
-	obs_property_list_add_int(list, MT_("mute"), -1);
+	int selected_ch = obs_data_get_int(settings, obs_property_name(prop));
 	long long channels = get_obs_output_channels();
+	size_t i = 0;
+	size_t j = 0;
 
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
 
-	//template out the format for the json
-	const char* route_obs_format = "in.ch.%i";
+	//template out
+	const char* route_obs_format = "out.ch.%i";
 	size_t route_obs_len = strlen(route_obs_format) + pad_digits;
 	char* route_obs = (char *)calloc(route_obs_len, sizeof(char));
 
-	for (long long c = 0; c < channels; c++) {
-		sprintf(route_obs, route_obs_format, c);
-		obs_property_list_add_int(list, MT_(route_obs), c);
+	if (obs_property_get_type(prop) == OBS_PROPERTY_LIST) {
+		obs_property_list_clear(prop);
+
+		for (i = 0; i < channels; i++) {
+			sprintf(route_obs, route_obs_format, i);
+			obs_property_list_add_int(prop, MT_(route_obs), i);
+		}
 	}
 
-	//don't memory leak
+	//template out the gain format
+	const char* gain_name_format = "gain %i";
+	size_t gain_len = strlen(gain_name_format) + pad_digits;
+	char* gain_name = (char *)calloc(gain_len, sizeof(char));
+
+	//template out mix format
+	const char* mix_name_format = "mix.%i.%i";
+	size_t mix_len = strlen(mix_name_format) + (pad_digits * 2);
+	char* mix_name = (char *)calloc(mix_len, sizeof(char));
+
+	//template out mix format
+	const char* polarity_name_format = "polarity.%i.%i";
+	size_t polarity_len = strlen(polarity_name_format) + (pad_digits * 2);
+	char* polarity_name = (char *)calloc(polarity_len, sizeof(char));
+
+	obs_property_t *gain;
+	obs_property_t *mix;
+	obs_property_t *invert;
+
+	bool visible = false;
+
+	for (i = 0; i < channels; i++) {
+		sprintf(gain_name, gain_name_format, i);
+
+		visible = i == selected_ch;
+
+		gain = obs_properties_get(props, gain_name);
+		if(gain)
+			obs_property_set_visible(gain, visible);
+
+		for (j = 0; j < channels; j++) {
+			sprintf(mix_name, mix_name_format, i, j);
+			sprintf(polarity_name, polarity_name_format, i, j);
+
+			mix = obs_properties_get(props, mix_name);
+			if(mix)
+				obs_property_set_visible(mix, visible);
+
+			invert = obs_properties_get(props, polarity_name);
+			if(invert)
+				obs_property_set_visible(invert, visible);
+		}
+	}
+
 	free(route_obs);
+	free(gain_name);
+	free(mix_name);
+	free(polarity_name);
 
 	return true;
 }
@@ -245,6 +386,8 @@ static obs_properties_t *rematrix_properties(void *data)
 	//pseduo-pan w/ gain (thanks Matt)
 	obs_property_t *gain[MAX_AV_PLANES];
 
+	obs_property_t *view_route;
+
 	size_t channels = audio_output_get_channels(obs_get_audio());
 
 	//make enough space for c strings
@@ -256,7 +399,7 @@ static obs_properties_t *rematrix_properties(void *data)
 	char* route_name = (char *)calloc(route_len, sizeof(char));
 
 	//template out the format for the json
-	const char* route_obs_format = "out.ch.%i";
+	const char* route_obs_format = "in.ch.%i";
 	size_t route_obs_len = strlen(route_obs_format) + pad_digits;
 	char* route_obs = (char *)calloc(route_obs_len, sizeof(char));
 
@@ -265,30 +408,49 @@ static obs_properties_t *rematrix_properties(void *data)
 	size_t gain_len = strlen(gain_name_format) + pad_digits;
 	char* gain_name = (char *)calloc(gain_len, sizeof(char));
 
+	//template out mix format
+	const char* mix_name_format = "mix.%i.%i";
+	size_t mix_len = strlen(mix_name_format) + (pad_digits * 2);
+	char* mix_name = (char *)calloc(mix_len, sizeof(char));
+
+	//template out mix format
+	const char* polarity_name_format = "polarity.%i.%i";
+	size_t polarity_len = strlen(polarity_name_format) + (pad_digits * 2);
+	char* polarity_name = (char *)calloc(polarity_len, sizeof(char));
+
+	//obs_property_add_int_slider(props, "view.route", MT("route"), 0, channels, 1);
+	//view_route = obs_properties_add_int_slider(props, "view.route", MT_("route"), 0, channels - 1, 1);
+
+	for (size_t i = 0; i < channels; i++) {
+		sprintf(gain_name, gain_name_format, i);
+		gain[i] = obs_properties_add_float_slider(props, gain_name,
+			MT_("Gain.GainDB"), -30.0, 30.0, 0.1);
+	}
+
+	view_route = obs_properties_add_list(props, "view.route", MT_("route"),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+
+	obs_property_set_modified_callback(view_route, update_visible);
+
 	//add an appropriate # of options to mix from
 	for (size_t i = 0; i < channels; i++) {
 		sprintf(route_name, route_name_format, i);
-		sprintf(gain_name, gain_name_format, i);
-
-		sprintf(route_obs, route_obs_format, i);
-		route[i] = obs_properties_add_list(props, route_name,
-			MT_(route_obs), OBS_COMBO_TYPE_LIST,
-			OBS_COMBO_FORMAT_INT);
-
-		obs_property_set_long_description(route[i],
-			MT_("tooltip"));
-
-		obs_property_set_modified_callback(route[i],
-			fill_out_channels);
-
-		gain[i] = obs_properties_add_float_slider(props, gain_name,
-			MT_("Gain.GainDB"), -30.0, 30.0, 0.1);
+		for (long long j = 0; j < channels; j++) {
+			sprintf(mix_name, mix_name_format, i, j);
+			sprintf(polarity_name, polarity_name_format, i, j);
+			sprintf(route_obs, route_obs_format, j);
+			obs_properties_add_float_slider(props, mix_name,
+				MT_(route_obs), 0.0, 1.0 * SCALE, 0.01);
+			obs_properties_add_bool(props, polarity_name, MT_("Invert"));
+		}
 	}
 
 	//don't memory leak
 	free(gain_name);
 	free(route_name);
 	free(route_obs);
+	free(mix_name);
+	free(polarity_name);
 
 	return props;
 }
