@@ -396,7 +396,7 @@ static obs_properties_t *rematrix_properties(void *data)
 			sprintf(mix_name, mix_name_format, i, j);
 			sprintf(route_obs, route_obs_format, j);
 			obs_properties_add_float_slider(props, mix_name,
-				MT_(route_obs), 0.0, 1.0 * SCALE, 0.01);
+				MT_(route_obs), -1.0 * SCALE, 1.0 * SCALE, 0.01);
 		}
 	}
 
