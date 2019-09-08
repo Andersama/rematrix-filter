@@ -31,14 +31,10 @@ struct rematrix_data {
 	obs_source_t *context;
 	size_t channels;
 	//store the routing information
-	long route[MAX_AV_PLANES];
-	double gain[MAX_AV_PLANES];
+	std::atomic<long> route[MAX_AV_PLANES];
+	std::atomic<float> gain[MAX_AV_PLANES];
 	//store a temporary buffer
 	uint8_t *tmpbuffer[MAX_AV_PLANES];
-
-	//initialize once, optimize for fast use
-	volatile long long _route[MAX_AV_PLANES];
-	volatile double _gain[MAX_AV_PLANES];
 };
 
 /*****************************************************************************/
@@ -68,7 +64,7 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 	bool route_changed = false;
 	bool gain_changed = false;
 	long route[MAX_AV_PLANES];
-	double gain[MAX_AV_PLANES];
+	float gain[MAX_AV_PLANES];
 
 	//make enough space for c strings
 	int pad_digits = (int)floor(log10(abs(MAX_AV_PLANES))) + 1;
@@ -92,15 +88,11 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 		gain[i] = (float)obs_data_get_double(settings, gain_name);
 
 		gain[i] = db_to_mul(gain[i]);
-
-		if (rematrix->route[i] != route[i]) {
-			rematrix->route[i] = route[i];
+		
+		if (!rematrix->route[i].compare_exchange_strong(rematrix->route[i].load(), route[i]))
 			route_changed = true;
-		}
-		if (rematrix->gain[i] != gain[i]) {
-			rematrix->gain[i] = gain[i];
+		if (!rematrix->gain[i].compare_exchange_strong(rematrix->gain[i].load(), gain[i]))
 			gain_changed = true;
-		}
 	}
 
 	//don't memory leak
@@ -130,11 +122,13 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 	float **fmatrixed_data = (float**)rematrix->tmpbuffer;
 	float **fdata = (float**)audio->data;
 	size_t ch_buffer = (audio->frames * sizeof(float));
+	float route[MAX_AV_PLANES];
+	float gain[MAX_AV_PLANES];
 
 	//prevent race condition
 	for (size_t c = 0; c < channels; c++) {
-		rematrix->_route[c] = rematrix->route[c];
-		rematrix->_gain[c] = rematrix->gain[c];
+		route[c] = rematrix->route[c].load();
+		gain[c] = rematrix->gain[c].load();
 	}
 
 	uint32_t frames = audio->frames;
@@ -152,9 +146,9 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		//copy data to temporary buffer
 		for (size_t c = 0; c < channels; c++) {
 			//valid route copy data to temporary buffer
-			if (fdata[c] && rematrix->_route[c] >= 0 && rematrix->_route[c] < channels)
+			if (fdata[c] && route[c] >= 0 && route[c] < channels)
 				memcpy(fmatrixed_data[c],
-					&fdata[rematrix->_route[c]][chunk],
+					&fdata[route[c]][chunk],
 					copy_size);
 			//not a valid route, mute
 			else
@@ -165,9 +159,8 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 		for (size_t c = 0; c < channels; c++) {
 			if (!fdata[c])
 				continue;
-			for (size_t s = 0; s < unprocessed_samples; s++) {
-				fdata[c][chunk + s] = fmatrixed_data[c][s] * rematrix->_gain[c];
-			}
+			for (size_t s = 0; s < unprocessed_samples; s++)
+				fdata[c][chunk + s] = fmatrixed_data[c][s] * gain[c];
 		}
 		//move to next chunk of unprocessed data
 	}

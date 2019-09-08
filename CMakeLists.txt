@@ -20,7 +20,7 @@ include_directories(
 #endif()
 
 set(rematrix-filter_SOURCES
-	rematrix-filter.c
+	rematrix-filter.cpp
 )
 
 add_library(rematrix-filter MODULE
