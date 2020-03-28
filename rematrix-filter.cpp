@@ -4,6 +4,7 @@
 
 #include <media-io/audio-math.h>
 #include <math.h>
+#include <atomic>
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("rematrix-filter", "en-US")
@@ -45,7 +46,7 @@ static const char *rematrix_name(void *unused) {
 
 /*****************************************************************************/
 static void rematrix_destroy(void *data) {
-	struct rematrix_data *rematrix = data;
+	struct rematrix_data *rematrix = (struct rematrix_data *)data;
 
 	for (size_t i = 0; i < rematrix->channels; i++) {
 		if (rematrix->tmpbuffer[i])
@@ -57,7 +58,7 @@ static void rematrix_destroy(void *data) {
 
 /*****************************************************************************/
 static void rematrix_update(void *data, obs_data_t *settings) {
-	struct rematrix_data *rematrix = data;
+	struct rematrix_data *rematrix = (struct rematrix_data *)data;
 
 	rematrix->channels = audio_output_get_channels(obs_get_audio());
 
@@ -88,10 +89,13 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 		gain[i] = (float)obs_data_get_double(settings, gain_name);
 
 		gain[i] = db_to_mul(gain[i]);
-		
-		if (!rematrix->route[i].compare_exchange_strong(rematrix->route[i].load(), route[i]))
+
+		long other_route = rematrix->route[i].load();
+		float other_gain = rematrix->gain[i].load();
+
+		if (!rematrix->route[i].compare_exchange_strong(other_route, route[i]))
 			route_changed = true;
-		if (!rematrix->gain[i].compare_exchange_strong(rematrix->gain[i].load(), gain[i]))
+		if (!rematrix->gain[i].compare_exchange_strong(other_gain, gain[i]))
 			gain_changed = true;
 	}
 
@@ -102,12 +106,13 @@ static void rematrix_update(void *data, obs_data_t *settings) {
 
 /*****************************************************************************/
 static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
-	struct rematrix_data *rematrix = bzalloc(sizeof(*rematrix));
+	//struct rematrix_data *rematrix = bzalloc(sizeof(*rematrix));
+	struct rematrix_data *rematrix = (struct rematrix_data *) bzalloc(sizeof(*rematrix));
 	rematrix->context = filter;
 	rematrix_update(rematrix, settings);
 
 	for (size_t i = 0; i < rematrix->channels; i++) {
-		rematrix->tmpbuffer[i] = bzalloc(MAX_AUDIO_SIZE);
+		rematrix->tmpbuffer[i] = (uint8_t *)bzalloc(MAX_AUDIO_SIZE);
 	}
 
 	return rematrix;
@@ -117,7 +122,7 @@ static void *rematrix_create(obs_data_t *settings, obs_source_t *filter) {
 static struct obs_audio_data *rematrix_filter_audio(void *data,
 	struct obs_audio_data *audio) {
 
-	struct rematrix_data *rematrix = data;
+	struct rematrix_data *rematrix = (struct rematrix_data *)data;
 	const size_t channels = rematrix->channels;
 	float **fmatrixed_data = (float**)rematrix->tmpbuffer;
 	float **fdata = (float**)audio->data;
@@ -148,7 +153,7 @@ static struct obs_audio_data *rematrix_filter_audio(void *data,
 			//valid route copy data to temporary buffer
 			if (fdata[c] && route[c] >= 0 && route[c] < channels)
 				memcpy(fmatrixed_data[c],
-					&fdata[route[c]][chunk],
+					&fdata[(int)route[c]][chunk],
 					copy_size);
 			//not a valid route, mute
 			else
