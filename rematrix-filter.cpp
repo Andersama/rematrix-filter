@@ -301,10 +301,22 @@ bool obs_module_load(void)
 		.get_name = rematrix_name,
 		.create = rematrix_create,
 		.destroy = rematrix_destroy,
-		.update = rematrix_update,
-		.filter_audio = rematrix_filter_audio,
+		// .get_width = null,
+		// .get_height = null,
 		.get_defaults = rematrix_defaults,
 		.get_properties = rematrix_properties,
+		.update = rematrix_update,
+		// .deactivate = null,
+		// .show = null,
+		// .hide = null,
+		// .video_tick = null,
+		// .video_render = null,
+		// .filter_video = null,
+		.filter_audio = rematrix_filter_audio,
+		// .enum_active_sources = null,
+		// .save = null,
+		// .load = null,
+		// ... many more
 	};
 
 	obs_register_source(&rematrixer_filter);
